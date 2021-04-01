@@ -11,8 +11,8 @@
     <Copyright>© 2021 shalzuth</Copyright>
     <Version>0.0.1</Version>
     <Description>A package to help create esp, radar, and other tools for unreal engine UE games</Description>
-    <PackageProjectUrl>http://github.com/shalzuth/UnrealSharp</PackageProjectUrl>
-    <RepositoryUrl>http://github.com/shalzuth/UnrealSharp</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/shalzuth/UnrealSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/shalzuth/UnrealSharp</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Platforms>x64</Platforms>
     <StartupObject>UnrealSharp.Program</StartupObject>
