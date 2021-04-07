@@ -1,10 +1,30 @@
 ﻿using System;
-using SharpDX;
+using System.Numerics;
 
 namespace UnrealSharp
 {
     public static class Extensions
     {
+        public static SharpDX.Color ToSharpDx(this System.Drawing.Color color)
+        {
+            return new SharpDX.Color(color.R, color.G, color.B, color.A);
+        }
+        public static SharpDX.Vector3 ToSharpDx(this Vector3 v3)
+        {
+            return new SharpDX.Vector3(v3.X, v3.Y, v3.Z);
+        }
+        public static SharpDX.Vector2 ToSharpDx(this Vector2 v2)
+        {
+            return new SharpDX.Vector2(v2.X, v2.Y);
+        }
+        public static Vector3 ToNative(this SharpDX.Vector3 v3)
+        {
+            return new Vector3(v3.X, v3.Y, v3.Z);
+        }
+        public static Vector2 ToNative(this SharpDX.Vector2 v2)
+        {
+            return new Vector2(v2.X, v2.Y);
+        }
         public static Single Mult(this Vector3 v, Vector3 s) => v.X * s.X + v.Y * s.Y + v.Z * s.Z;
         public static void GetAxes(this Vector3 v, out Vector3 x, out Vector3 y, out Vector3 z)
         {

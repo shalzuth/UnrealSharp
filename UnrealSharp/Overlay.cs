@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SharpDX;
@@ -12,44 +13,84 @@ using Factory = SharpDX.Direct2D1.Factory;
 using FactoryType = SharpDX.Direct2D1.FactoryType;
 using FontFactory = SharpDX.DirectWrite.Factory;
 using TextAntialiasMode = SharpDX.Direct2D1.TextAntialiasMode;
+using Vector3 = System.Numerics.Vector3;
+using Vector2 = System.Numerics.Vector2;
+using Color = System.Drawing.Color;
 
 namespace UnrealSharp
 {
-    public class Overlay : RenderForm
+    public class OverlayRenderForm : RenderForm
     {
-        public WindowRenderTarget GraphicsDevice;
-        public TextFormat tf;
-        public SolidColorBrush br;
+        public OverlayRenderForm()
+        {
+            ShowInTaskbar = false;
+            BackColor = TransparencyKey = Color.AntiqueWhite;
+        }
+        [DllImport("user32")] static extern IntPtr SetActiveWindow(IntPtr handle);
+        protected override void WndProc(ref Message m)
+        {
+            if (FormBorderStyle == FormBorderStyle.Sizable) base.WndProc(ref m);
+            else if (m.Msg == 0x21)
+            {
+                m.Result = (IntPtr)4;
+                return;
+            }
+            else if (m.Msg == 6)
+            {
+                if (((int)m.WParam & 0xFFFF) != 0)
+                    if (m.LParam != IntPtr.Zero) SetActiveWindow(m.LParam);
+                    else SetActiveWindow(IntPtr.Zero);
+            }
+            else
+                base.WndProc(ref m);
+        }
+        protected override bool ShowWithoutActivation { get { return FormBorderStyle == FormBorderStyle.Sizable ? base.ShowWithoutActivation : true; } }
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                if (FormBorderStyle == FormBorderStyle.Sizable) return base.CreateParams;
+                var param = base.CreateParams;
+                param.ExStyle |= 0x08000000;
+                return param;
+            }
+        }
+    }
+    public class Overlay
+    {
+        WindowRenderTarget GraphicsDevice;
+        TextFormat tf;
+        SolidColorBrush br;
         FontFactory font;
         Process process;
-        public RenderLoop Loop;
+        RenderLoop Loop;
+        OverlayRenderForm overlayWindowForm;
         public Overlay(Process proc)
         {
+            overlayWindowForm = new OverlayRenderForm();
             Control.CheckForIllegalCrossThreadCalls = false;
-            ShowInTaskbar = false;
-            BackColor = TransparencyKey = System.Drawing.Color.AntiqueWhite;
             process = proc;
             CreateDx();
             SetToTransparentChild();
-            Loop = new RenderLoop(this);
-            Show();
+            Loop = new RenderLoop(overlayWindowForm);
+            overlayWindowForm.Show();
         }
         public void Begin()
         {
-            if (FormBorderStyle != FormBorderStyle.Sizable) TopMost = process.MainWindowHandle == GetForegroundWindow();
+            if (overlayWindowForm.FormBorderStyle != FormBorderStyle.Sizable) overlayWindowForm.TopMost = process.MainWindowHandle == GetForegroundWindow();
             TickFps();
             GraphicsDevice.BeginDraw();
-            GraphicsDevice.Clear(((FormBorderStyle == FormBorderStyle.Sizable) ? Color.Blue : Color.AntiqueWhite).ToColor4());
+            GraphicsDevice.Clear(((overlayWindowForm.FormBorderStyle == FormBorderStyle.Sizable) ? Color.Blue : Color.AntiqueWhite).ToSharpDx().ToColor4());
         }
         public void End()
         {
             GraphicsDevice.EndDraw();
         }
-        public void CreateDx()
+        void CreateDx()
         {
             var deviceProperties = new HwndRenderTargetProperties()
             {
-                Hwnd = Handle,
+                Hwnd = overlayWindowForm.Handle,
                 PixelSize = new Size2(1920, 1080),
                 PresentOptions = PresentOptions.Immediately
             };
@@ -74,14 +115,14 @@ namespace UnrealSharp
                     GraphicsDevice = new WindowRenderTarget(_factory, renderProperties, deviceProperties);
                 }
             }
-            br = new SolidColorBrush(GraphicsDevice, Color.Green.ToColor4());
+            br = new SolidColorBrush(GraphicsDevice, Color.Green.ToSharpDx().ToColor4());
             GraphicsDevice.AntialiasMode = AntialiasMode.Aliased;
             GraphicsDevice.TextAntialiasMode = TextAntialiasMode.Aliased;
         }
         public void SetToTransparentChild(Boolean topMost = true)
         {
-            FormBorderStyle = FormBorderStyle.None;
-            SetWindowLong(Handle, -20, GetWindowLong(Handle, -20) | 0x80000 | 0x20);
+            overlayWindowForm.FormBorderStyle = FormBorderStyle.None;
+            SetWindowLong(overlayWindowForm.Handle, -20, GetWindowLong(overlayWindowForm.Handle, -20) | 0x80000 | 0x20);
             GetClientRect(process.MainWindowHandle, out Rect c);
             GraphicsDevice.Resize(new Size2(c.Right, c.Bottom));
             if (topMost)
@@ -89,22 +130,22 @@ namespace UnrealSharp
                 GetWindowRect(process.MainWindowHandle, out Rect w);
                 var border = (w.Right - w.Left - c.Right) / 2;
                 var toolbar = w.Bottom - w.Top - c.Bottom - border;
-                SetWindowPos(Handle, 0, w.Left + border, w.Top + toolbar, c.Right, c.Bottom, 0);
-                TopMost = true;
+                SetWindowPos(overlayWindowForm.Handle, 0, w.Left + border, w.Top + toolbar, c.Right, c.Bottom, 0);
+                overlayWindowForm.TopMost = true;
             }
             else
             {
-                SetParent(Handle, (IntPtr)process.MainWindowHandle);
-                SetWindowPos(Handle, 0, 0, 0, c.Right, c.Bottom, 0);
+                SetParent(overlayWindowForm.Handle, (IntPtr)process.MainWindowHandle);
+                SetWindowPos(overlayWindowForm.Handle, 0, 0, 0, c.Right, c.Bottom, 0);
             }
         }
         public void SetToRegularWindow()
         {
-            TopMost = false;
-            SetWindowPos(Handle, 0, 0, 0, 500, 500, 0);
+            overlayWindowForm.TopMost = false;
+            SetWindowPos(overlayWindowForm.Handle, 0, 0, 0, 500, 500, 0);
             GraphicsDevice.Resize(new Size2(500, 500));
             //ShowInTaskbar = true;
-            FormBorderStyle = FormBorderStyle.Sizable;
+            overlayWindowForm.FormBorderStyle = FormBorderStyle.Sizable;
             //SetWindowLong(Handle, -20, GetWindowLong(Handle, -20) | 0x80000 | 0x20);
             //SetParent(Handle, IntPtr.Zero);
         }
@@ -122,8 +163,8 @@ namespace UnrealSharp
             var vDelta = worldLocation - cameraLocation;
             var vTransformed = new Vector3(vDelta.Mult(vAxisY), vDelta.Mult(vAxisZ), vDelta.Mult(vAxisX));
             if (vTransformed.Z < 1f) vTransformed.Z = 1f;
-            var ScreenCenterX = ClientSize.Width / 2;
-            var ScreenCenterY = ClientSize.Height / 2;
+            var ScreenCenterX = overlayWindowForm.ClientSize.Width / 2;
+            var ScreenCenterY = overlayWindowForm.ClientSize.Height / 2;
             var fullScreen = new Vector2(ScreenCenterX + vTransformed.X * (ScreenCenterX / (float)Math.Tan(fieldOfView * (float)Math.PI / 360)) / vTransformed.Z,
                 ScreenCenterY - vTransformed.Y * (ScreenCenterX / (float)Math.Tan(fieldOfView * (float)Math.PI / 360)) / vTransformed.Z);
             return new Vector2(fullScreen.X, fullScreen.Y);
@@ -147,22 +188,22 @@ namespace UnrealSharp
             radarLoc += new Vector2(radarSize, radarSize);
             return radarLoc;
         }
-        void DrawLines(Color color, Vector2[] points)
+        public void DrawLines(Color color, Vector2[] points)
         {
             for (int i = 0; i < points.Length - 1; i++)
                 DrawLine(color, points[i], points[i + 1]);
         }
-        void DrawLine(Color color, Vector2 start, Vector2 end)
+        public void DrawLine(Color color, Vector2 start, Vector2 end)
         {
             var dist = Vector2.Distance(start, end);
             var angle = -Math.PI / 2 - Math.Atan2(-(end.Y - start.Y), end.X - start.X);
-            using (var brush = new SolidColorBrush(GraphicsDevice, color.ToColor4()))
-                GraphicsDevice.DrawLine(start, end, brush);
+            using (var brush = new SolidColorBrush(GraphicsDevice, color.ToSharpDx().ToColor4()))
+                GraphicsDevice.DrawLine(start.ToSharpDx(), end.ToSharpDx(), brush);
         }
-        public void DrawBox(Vector3 targetPosition, Vector3 targetRotation, Vector3 cameraLocation, Vector3 cameraRotation, Single fieldOfView, Color color)
+        public void DrawBox(Vector3 targetPosition, Vector3 targetRotation, Vector3 cameraLocation, Vector3 cameraRotation, Single fieldOfView, System.Drawing.Color color)
         {
             var targetTest = WorldToScreen(targetPosition, cameraLocation, cameraRotation, fieldOfView);
-            if (targetTest.X < 0 || targetTest.Y < 0 || targetTest.X > Width || targetTest.Y > Height)
+            if (targetTest.X < 0 || targetTest.Y < 0 || targetTest.X > overlayWindowForm.Width || targetTest.Y > overlayWindowForm.Height)
                 return;
 
             Single l = 60f, w = 60f, h = 80f, o = 50f;
@@ -189,10 +230,10 @@ namespace UnrealSharp
             var rotM = new Matrix(rotMVals);
 
             var curPos = new Vector3(targetPosition.X + xOffset, targetPosition.Y + yOffset, targetPosition.Z + zOffset);
-            p01 = Vector3.TransformCoordinate(p01, rotM) + curPos;
-            p03 = Vector3.TransformCoordinate(p03, rotM) + curPos;
-            p00 = Vector3.TransformCoordinate(p00, rotM) + curPos;
-            p02 = Vector3.TransformCoordinate(p02, rotM) + curPos;
+            p01 = SharpDX.Vector3.TransformCoordinate(p01.ToSharpDx(), rotM).ToNative() + curPos;
+            p03 = SharpDX.Vector3.TransformCoordinate(p03.ToSharpDx(), rotM).ToNative() + curPos;
+            p00 = SharpDX.Vector3.TransformCoordinate(p00.ToSharpDx(), rotM).ToNative() + curPos;
+            p02 = SharpDX.Vector3.TransformCoordinate(p02.ToSharpDx(), rotM).ToNative() + curPos;
 
             var s03 = WorldToScreen(p03, cameraLocation, cameraRotation, fieldOfView);
             var s00 = WorldToScreen(p00, cameraLocation, cameraRotation, fieldOfView);
@@ -224,18 +265,22 @@ namespace UnrealSharp
             {
                 targetRotation = targetRotation.FromRotator();
                 targetRotation.Z = 0;
-                targetRotation.Normalize();
+                targetRotation = Vector3.Normalize(targetRotation);
                 var endLoc = targetPosition + 400 * targetRotation;
                 var endRadarLoc = WorldToWindow(endLoc, playerLocation, cameraRotation, 3000, 200);
                 DrawLine(Color.Yellow, radarLoc, endRadarLoc);
             }
         }
-        public virtual void DrawMenu() { }
-        public virtual void DrawEsp() { }
+        public void DrawText(String text, Vector2 loc, Color color)
+        {
+            using (var size = new TextLayout(font, text, tf, 1920, 1080))
+            using (var brush = new SolidColorBrush(GraphicsDevice, color.ToSharpDx().ToColor4()))
+                GraphicsDevice.DrawText(text, tf, new SharpDX.Mathematics.Interop.RawRectangleF(loc.X, loc.Y, loc.X + size.Metrics.Width + 5, loc.Y + size.Metrics.Height + 5), brush);
+        }
         Stopwatch clock = new Stopwatch();
         UInt64 frameCount;
         public Double MeasuredFps { get; set; }
-        public void TickFps()
+        void TickFps()
         {
             if (!clock.IsRunning) clock.Start();
             frameCount++;
@@ -250,8 +295,8 @@ namespace UnrealSharp
         }
         public void AimAtPos(Vector2 location, Single smoothSpeed = 2)
         {
-            Single ScreenCenterX = Width / 2;
-            Single ScreenCenterY = Height / 2;
+            Single ScreenCenterX = overlayWindowForm.Width / 2;
+            Single ScreenCenterY = overlayWindowForm.Height / 2;
             Single TargetX = 0;
             Single TargetY = 0;
             if (location.X > ScreenCenterX)
@@ -284,7 +329,6 @@ namespace UnrealSharp
         [DllImport("user32")] static extern int SetWindowLong(IntPtr hWnd, Int32 nIndex, Int32 dwNewLong);
         [DllImport("user32")] static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
         [DllImport("user32")] static extern bool SetWindowPos(IntPtr hWnd, Int32 hWndInsertAfter, Int32 X, Int32 Y, Int32 cx, Int32 cy, UInt32 uFlags);
-        [DllImport("user32")] static extern IntPtr SetActiveWindow(IntPtr handle);
         [DllImport("user32")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32")] static extern short GetKeyState(Int32 keyCode);
         [DllImport("user32")] static extern void mouse_event(UInt32 dwFlags, Int32 dx, Int32 dy, UInt32 dwData, Int32 dwExtraInfo);
@@ -294,34 +338,6 @@ namespace UnrealSharp
             public int Top { get; set; }
             public int Right { get; set; }
             public int Bottom { get; set; }
-        }
-        protected override void WndProc(ref Message m)
-        {
-            if (FormBorderStyle == FormBorderStyle.Sizable) base.WndProc(ref m);
-            else if (m.Msg == 0x21)
-            {
-                m.Result = (IntPtr)4;
-                return;
-            }
-            else if (m.Msg == 6)
-            {
-                if (((int)m.WParam & 0xFFFF) != 0)
-                    if (m.LParam != IntPtr.Zero) SetActiveWindow(m.LParam);
-                    else SetActiveWindow(IntPtr.Zero);
-            }
-            else
-                base.WndProc(ref m);
-        }
-        protected override bool ShowWithoutActivation { get { return FormBorderStyle == FormBorderStyle.Sizable ? base.ShowWithoutActivation : true; } }
-        protected override CreateParams CreateParams
-        {
-            get
-            {
-                if (FormBorderStyle == FormBorderStyle.Sizable) return base.CreateParams;
-                var param = base.CreateParams;
-                param.ExStyle |= 0x08000000;
-                return param;
-            }
         }
     }
 }

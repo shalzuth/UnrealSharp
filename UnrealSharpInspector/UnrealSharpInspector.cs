@@ -1,23 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
-using SharpDX;
-using SharpDX.Mathematics.Interop;
+using System.Numerics;
+using UnrealSharp;
 
-namespace UnrealSharp
+namespace UnrealSharpInspector
 {
-    public partial class UnrealSharp : Form
+    public partial class UnrealSharpInspector : Form
     {
-        String staticGameName => "autogenerate";
-        //String staticGameName => "FSD-Win64-Shipping";
+        //String staticGameName => "autogenerate";
+        String staticGameName => "FSD-Win64-Shipping";
         Process process;
         Overlay esp;
-        public List<UnrealEngine.UEObject> actors { get; set; } = new List<UnrealEngine.UEObject>();
-        public UnrealSharp()
+        public List<UEObject> actors { get; set; } = new List<UEObject>();
+        public UnrealSharpInspector()
         {
             InitializeComponent();
             Control.CheckForIllegalCrossThreadCalls = false;
@@ -52,7 +53,7 @@ namespace UnrealSharp
                         lock (sync)
                         {
                             esp.Begin();
-                            if (EngineLoop() > 0) { UnrealEngine.UEObject.ClearCache(); }
+                            if (EngineLoop() > 0) { UEObject.ClearCache(); }
                             esp.End();
                         }
                     }
@@ -67,13 +68,13 @@ namespace UnrealSharp
         private void DumpScene()
         {
             actorList.Items.Clear();
-            var World = new UnrealEngine.UEObject(UnrealEngine.Memory.ReadProcessMemory<UInt64>(UnrealEngine.GWorldPtr));
+            var World = new UEObject(UnrealEngine.Memory.ReadProcessMemory<UInt64>(UnrealEngine.GWorldPtr));
             var Levels = World["Levels"];
             for (var levelIndex = 0u; levelIndex < Levels.Num; levelIndex++)
             {
                 var Level = Levels[levelIndex];
                 actorList.Items.Add(Level.Address + " : " + Level.GetFullPath());
-                var Actors = new UnrealEngine.UEObject(Level.Address + 0xA8); // todo fix hardcoded 0xA8 offset...
+                var Actors = new UEObject(Level.Address + 0xA8); // todo fix hardcoded 0xA8 offset...
                 for (var i = 0u; i < Actors.Num; i++)
                 {
                     var Actor = Actors[i];
@@ -90,19 +91,19 @@ namespace UnrealSharp
         private void DisplayActorInfo(UInt64 actorAddr)
         {
             actorInfo.Items.Clear();
-            var actor = new UnrealEngine.UEObject(actorAddr);
+            var actor = new UEObject(actorAddr);
             actorInfo.Items.Add(actor.Address + " : " + actor.GetFullPath() + " : " + actor.ClassName);
             var tempEntity = actor.ClassAddr;
             while (true)
             {
-                var classNameIndex = UnrealEngine.Memory.ReadProcessMemory<Int32>(tempEntity + UnrealEngine.UEObject.nameOffset);
-                var name = UnrealEngine.UEObject.GetName(classNameIndex);
+                var classNameIndex = UnrealEngine.Memory.ReadProcessMemory<Int32>(tempEntity + UEObject.nameOffset);
+                var name = UEObject.GetName(classNameIndex);
 
                 actorInfo.Items.Add(name);
-                var field = tempEntity + UnrealEngine.UEObject.childPropertiesOffset - UnrealEngine.UEObject.fieldNextOffset;
-                while ((field = UnrealEngine.Memory.ReadProcessMemory<UInt64>(field + UnrealEngine.UEObject.fieldNextOffset)) > 0)
+                var field = tempEntity + UEObject.childPropertiesOffset - UEObject.fieldNextOffset;
+                while ((field = UnrealEngine.Memory.ReadProcessMemory<UInt64>(field + UEObject.fieldNextOffset)) > 0)
                 {
-                    var fName = UnrealEngine.UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(field + UnrealEngine.UEObject.fieldNameOffset));
+                    var fName = UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(field + UEObject.fieldNameOffset));
                     var fType = actor.GetFieldType(field);
                     var fValue = "(" + field.ToString() + ")";
                     var offset = (UInt32)actor.GetFieldOffset(field);
@@ -114,7 +115,7 @@ namespace UnrealSharp
                     else if (fType == "FloatProperty")
                     {
                         fType = "Single";
-                        fValue = BitConverter.ToSingle(BitConverter.GetBytes(actor[fName].Value)).ToString();
+                        fValue = BitConverter.ToSingle(BitConverter.GetBytes(actor[fName].Value), 0).ToString();
                     }
                     else if (fType == "IntProperty")
                     {
@@ -123,12 +124,19 @@ namespace UnrealSharp
                     }
                     else if (fType == "ObjectProperty" || fType == "StructProperty")
                     {
-                        var obj = new UnrealEngine.UEObject(UnrealEngine.Memory.ReadProcessMemory<UInt64>(actorAddr + offset)) { FieldOffset = offset };
+                        var obj = new UEObject(UnrealEngine.Memory.ReadProcessMemory<UInt64>(actorAddr + offset)) { FieldOffset = offset };
                         fType = obj.GetShortName();
                     }
                     actorInfo.Items.Add("  " + fType + " " + fName + " = " + fValue);
                 }
-                tempEntity = UnrealEngine.Memory.ReadProcessMemory<UInt64>(tempEntity + UnrealEngine.UEObject.structSuperOffset);
+
+                field = tempEntity + UEObject.childrenOffset - UEObject.funcNextOffset;
+                while ((field = UnrealEngine.Memory.ReadProcessMemory<UInt64>(field + UEObject.funcNextOffset)) > 0)
+                {
+                    var fName = UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(field + UEObject.nameOffset));
+                    actorInfo.Items.Add("  func " + fName);
+                }
+                tempEntity = UnrealEngine.Memory.ReadProcessMemory<UInt64>(tempEntity + UEObject.structSuperOffset);
                 if (tempEntity == 0) break;
             }
         }
@@ -142,8 +150,8 @@ namespace UnrealSharp
         private void actorInfo_SelectedIndexChanged(object sender, EventArgs e)
         {
             var actorAddr = UInt64.Parse(actorInfo.Items[0].ToString().Split(':')[0].Replace(" ", ""));
-            var fName = actorInfo.SelectedItem.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries)[1];
-            var a = new UnrealEngine.UEObject(actorAddr)[fName];
+            var fName = actorInfo.SelectedItem.ToString().Split(new char[1] { ' ' }, StringSplitOptions.RemoveEmptyEntries)[1];
+            var a = new UEObject(actorAddr)[fName];
             DisplayActorInfo(a.Address);
         }
 
@@ -160,15 +168,16 @@ namespace UnrealSharp
         }
         Int32 EngineLoop()
         {
+            if (!showOverlay.Checked) return 0;
             if (UnrealEngine.GWorldPtr == 0) return 1;
             var sb = new StringBuilder();
             sb.AppendLine("Shalzuth's Helper Tool");
             sb.AppendLine("FPS : " + esp.MeasuredFps.ToString("0.00"));
-            sb.AppendLine("ESP(F1) : " + Hotkeys.ToggledKey(Keys.F1));
-            sb.AppendLine("Radar(F2) : " + Hotkeys.ToggledKey(Keys.F2));
+            sb.AppendLine("ESP(F1) : " + !Hotkeys.ToggledKey(Keys.F1));
+            sb.AppendLine("Radar(F2) : " + !Hotkeys.ToggledKey(Keys.F2));
             sb.AppendLine("HoldAim(F3) : " + Hotkeys.IsPressed(Keys.F3));
-            esp.GraphicsDevice.DrawText(sb.ToString(), esp.tf, new RawRectangleF(20, 20, 20 + 400, 500), esp.br);
-            var World = new UnrealEngine.UEObject(UnrealEngine.Memory.ReadProcessMemory<UInt64>(UnrealEngine.GWorldPtr)); if (World == null || !World.IsA("Class /Script/Engine.World")) return 1;
+            esp.DrawText(sb.ToString(), new Vector2(20, 20), Color.Green);
+            var World = new UEObject(UnrealEngine.Memory.ReadProcessMemory<UInt64>(UnrealEngine.GWorldPtr)); if (World == null || !World.IsA("Class /Script/Engine.World")) return 1;
             var PersistentLevel = World["PersistentLevel"];
             var Levels = World["Levels"];
             var OwningGameInstance = World["OwningGameInstance"]; if (OwningGameInstance == null || !OwningGameInstance.IsA("Class /Script/Engine.GameInstance")) return 1;
@@ -187,13 +196,13 @@ namespace UnrealSharp
             var PlayerRoot = AcknowledgedPawn["RootComponent"];
             var PlayerRelativeLocation = PlayerRoot["RelativeLocation"];
             var PlayerLocation = UnrealEngine.Memory.ReadProcessMemory<Vector3>(PlayerRelativeLocation.Address);
-            if (Hotkeys.ToggledKey(Keys.F2)) esp.DrawArrow(PlayerLocation, CameraRotation, PlayerLocation, CameraRotation);
+            if (!Hotkeys.ToggledKey(Keys.F2)) esp.DrawArrow(PlayerLocation, CameraRotation, PlayerLocation, CameraRotation);
             var bestAngle = Single.MaxValue;
             var target = Vector2.Zero;
             for (var levelIndex = 0u; levelIndex < Levels.Num; levelIndex++)
             {
                 var Level = Levels[levelIndex];
-                var Actors = new UnrealEngine.UEObject(Level.Address + 0xA8); // todo fix hardcoded 0xA8 offset...
+                var Actors = new UEObject(Level.Address + 0xA8); // todo fix hardcoded 0xA8 offset...
                 var y = 0;
                 for (var i = 0u; i < Actors.Num; i++)
                 {
@@ -209,10 +218,8 @@ namespace UnrealSharp
                     var RelativeRotation = RootComponent["RelativeRotation"];
                     var Rotation = UnrealEngine.Memory.ReadProcessMemory<Vector3>(RelativeRotation.Address);
 
-                    var loc = esp.WorldToScreen(Location, CameraLocation, CameraRotation, CameraFOV);
-                    if (loc.X > 0 && loc.Y > 0 && loc.X < esp.Width && loc.Y < esp.Height)
-                        if (Hotkeys.ToggledKey(Keys.F1)) esp.DrawBox(Location, Rotation, CameraLocation, CameraRotation, CameraFOV, Color.Red);
-                    if (Hotkeys.ToggledKey(Keys.F2)) esp.DrawArrow(Location, Rotation, CameraLocation, CameraRotation);
+                    if (!Hotkeys.ToggledKey(Keys.F1)) esp.DrawBox(Location, Rotation, CameraLocation, CameraRotation, CameraFOV, Color.Red);
+                    if (!Hotkeys.ToggledKey(Keys.F2)) esp.DrawArrow(Location, Rotation, CameraLocation, CameraRotation);
 
                     if (Hotkeys.IsPressed(Keys.F3))
                     {

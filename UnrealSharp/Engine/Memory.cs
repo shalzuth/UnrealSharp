@@ -10,8 +10,8 @@ namespace UnrealSharp
     public unsafe class Memory
     {
         [DllImport("kernel32")] static extern IntPtr OpenProcess(UInt32 dwDesiredAccess, Int32 bInheritHandle, Int32 dwProcessId);
-        //[DllImport("kernel32")] static extern Int32 ReadProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, [In, Out] Byte[] buffer, Int32 size, out Int32 lpNumberOfBytesRead);
-        public static delegate* unmanaged[Stdcall] <IntPtr, UInt64, Byte[], Int32, out Int32, Int32> ReadProcMemInternal;
+        [DllImport("kernel32")] static extern Int32 ReadProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, [In, Out] Byte[] buffer, Int32 size, out Int32 lpNumberOfBytesRead);
+        //public static delegate* unmanaged[Stdcall] <IntPtr, UInt64, Byte[], Int32, out Int32, Int32> ReadProcMemInternal;
         [DllImport("kernel32")] static extern Boolean WriteProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, Byte[] buffer, Int32 nSize, out Int32 lpNumberOfBytesWritten);
         [DllImport("kernel32")] static extern Int32 CloseHandle(IntPtr hObject);
         [DllImport("kernel32")] static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, UInt32 dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, UInt32 dwCreationFlags, IntPtr lpThreadId);
@@ -25,8 +25,8 @@ namespace UnrealSharp
         public UInt64 BaseAddress { get { return (UInt64)Process.MainModule.BaseAddress; } }
         public Memory(Process proc)
         {
-            var handle = NativeLibrary.Load("kernel32.dll");
-            ReadProcMemInternal = (delegate* unmanaged[Stdcall]<IntPtr, UInt64, Byte[], Int32, out Int32, Int32>)NativeLibrary.GetExport(handle, "ReadProcessMemory");
+            //var handle = NativeLibrary.Load("kernel32.dll");
+            //ReadProcMemInternal = (delegate* unmanaged[Stdcall]<IntPtr, UInt64, Byte[], Int32, out Int32, Int32>)NativeLibrary.GetExport(handle, "ReadProcessMemory");
             Process = proc;
             if (Process == null) return;
             OpenProcess(Process.Id);
@@ -44,10 +44,10 @@ namespace UnrealSharp
             procHandle = OpenProcess(0x38, 1, procId);
         }
         public Int32 maxStringLength = 0x100;
-        public static Int32 ReadProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, [In, Out] Byte[] buffer, Int32 size, out Int32 lpNumberOfBytesRead)
+        /*public static Int32 ReadProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, [In, Out] Byte[] buffer, Int32 size, out Int32 lpNumberOfBytesRead)
         {
             return ReadProcMemInternal(hProcess, lpBaseAddress, buffer, size, out lpNumberOfBytesRead);
-        }
+        }*/
         public Byte[] ReadProcessMemory(UInt64 addr, Int32 length)
         {
             var maxSize = 0x64000;
@@ -95,6 +95,7 @@ namespace UnrealSharp
             var members = obj.GetType().GetFields();
             foreach (var member in members)
             {
+                continue;
                 if (member.FieldType == typeof(String))
                 {
                     var offset = Marshal.OffsetOf(type, member.Name).ToInt32();
@@ -239,6 +240,7 @@ namespace UnrealSharp
 
             IntPtr thread = CreateRemoteThread(procHandle, IntPtr.Zero, 0, codePtr, IntPtr.Zero, 0, IntPtr.Zero);
             WaitForSingleObject(thread, 10000);
+
             var returnValue = ReadProcessMemory<T>((UInt64)dummyParms);
             VirtualFreeEx(procHandle, dummyParms, 0, 0x8000);
             VirtualFreeEx(procHandle, codePtr, 0, 0x8000);
