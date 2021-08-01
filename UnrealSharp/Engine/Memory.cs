@@ -143,7 +143,16 @@ namespace UnrealSharp
         }
         public void WriteProcessMemory<T>(UInt64 addr, T value)
         {
-            var objSize = Marshal.SizeOf(value);
+            if (value.GetType().IsEnum)
+            {
+                var enumBaseType = Enum.GetUnderlyingType(value.GetType());
+                if (Marshal.SizeOf(enumBaseType) == 2) WriteProcessMemory(addr, (Int16)(Object)value);
+                else if (Marshal.SizeOf(enumBaseType) == 4) WriteProcessMemory(addr, (Int32)(Object)value);
+                else if (Marshal.SizeOf(enumBaseType) == 8) WriteProcessMemory(addr, (Int64)(Object)value);
+                else throw new Exception("unk enum size");
+                return;
+            }
+            var objSize =  Marshal.SizeOf(value);
             var objBytes = new Byte[objSize];
             var objPtr = Marshal.AllocHGlobal(objSize);
             Marshal.StructureToPtr(value, objPtr, true);
@@ -211,7 +220,8 @@ namespace UnrealSharp
             foreach (var obj in args)
             {
                 WriteProcessMemory((UInt64)dummyParms + offset, obj);
-                offset += (UInt32)Marshal.SizeOf(obj);
+                var outputType = obj.GetType().IsEnum ? Enum.GetUnderlyingType(obj.GetType()) : obj.GetType();
+                offset += (UInt32)Marshal.SizeOf(outputType);
             }
 
             var asm = new List<Byte>();
