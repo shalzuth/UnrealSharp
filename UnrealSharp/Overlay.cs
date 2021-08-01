@@ -172,7 +172,7 @@ namespace UnrealSharp
         Single LastYRotation = 0;
         Single CameraSinTheta = 0;
         Single CameraCosTheta = 0;
-        Vector2 WorldToWindow(Vector3 targetLocation, Vector3 playerLocation, Vector3 cameraRotation, Single maxRange, Single radarSize)
+        public Vector2 WorldToWindow(Vector3 targetLocation, Vector3 playerLocation, Vector3 cameraRotation, Single maxRange, Single radarSize)
         {
             if (LastYRotation != cameraRotation.Y)
             {
@@ -269,6 +269,17 @@ namespace UnrealSharp
                 var endLoc = targetPosition + 400 * targetRotation;
                 var endRadarLoc = WorldToWindow(endLoc, playerLocation, cameraRotation, 3000, 200);
                 DrawLine(Color.Yellow, radarLoc, endRadarLoc);
+            }
+        }
+        public void DrawMinimap(Vector3 targetPosition, Vector3 playerLocation, Vector3 cameraRotation, String text, Color color)
+        {
+            var offset = 50;
+            var radarSize = 200;
+            var radarLoc = WorldToWindow(targetPosition, playerLocation, cameraRotation, 10000, radarSize);
+            if (radarLoc.X > 0 && radarLoc.X < radarSize && radarLoc.Y > 0 && radarLoc.Y < radarSize)
+            {
+                radarLoc += new Vector2(offset, offset - 10);
+                DrawText(text, radarLoc, color);
             }
         }
         public void DrawText(String text, Vector2 loc, Color color)
