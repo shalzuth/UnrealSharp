@@ -18,6 +18,7 @@ namespace UnrealSharp
         static UInt64 GEnginePattern;
         public static UInt64 GEngine;
         public static UInt64 GStaticCtor;
+        public static UInt64 ActorListOffset;
         public static Memory Memory;
         public UnrealEngine(Memory mem) { Memory = mem; Instance = this; }
         public void LoadAddesses(String data)
@@ -130,6 +131,15 @@ namespace UnrealSharp
             {
                 var engine = new UEObject(GEngine);
                 GStaticCtor = (UInt64)Memory.FindPattern("4C 89 44 24 18 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4");
+            }
+            {
+                var world = Memory.ReadProcessMemory<UInt64>(GWorldPtr);
+                var World = new UEObject(world);
+                var Level = World["PersistentLevel"];
+                var owningWorldOffset = (UInt64)Level.GetFieldOffset(Level.GetFieldAddr("OwningWorld"));
+                // https://github.com/EpicGames/UnrealTournament/blob/3bf4b43c329ce041b4e33c9deb2ca66d78518b29/Engine/Source/Runtime/Engine/Classes/Engine/Level.h#L366
+                // Actors, StreamedLevelOwningWorld, Owning World
+                ActorListOffset = owningWorldOffset - 0x10;
             }
             //DumpSdk();
         }
@@ -1163,14 +1173,14 @@ namespace UnrealSharp
             var initFlags = UnrealEngine.Memory.ReadProcessMemory<UInt64>((UInt64)funcAddr + funcFlagsOffset);
             var nativeFlag = initFlags;
             nativeFlag |= 0x400;
-            UnrealEngine.Memory.WriteProcessMemory((UInt64)funcAddr + funcFlagsOffset, BitConverter.GetBytes(nativeFlag));
+            if (nativeFlag != initFlags) UnrealEngine.Memory.WriteProcessMemory((UInt64)funcAddr + funcFlagsOffset, BitConverter.GetBytes(nativeFlag));
             var val = UnrealEngine.Memory.ExecuteUEFunc<T>((IntPtr)VTableFunc, (IntPtr)Address, (IntPtr)funcAddr, args);
-            UnrealEngine.Memory.WriteProcessMemory((UInt64)funcAddr + funcFlagsOffset, BitConverter.GetBytes(initFlags));
+            if (nativeFlag != initFlags) UnrealEngine.Memory.WriteProcessMemory((UInt64)funcAddr + funcFlagsOffset, BitConverter.GetBytes(initFlags));
             return val;
         }
         public void Invoke(String funcName, params Object[] args)
         {
-            Invoke<Int32>(funcName, args);
+            Invoke<UInt64>(funcName, args);
         }
         public T As<T>() where T : UEObject
         {

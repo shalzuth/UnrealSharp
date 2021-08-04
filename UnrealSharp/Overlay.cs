@@ -92,7 +92,7 @@ namespace UnrealSharp
             {
                 Hwnd = overlayWindowForm.Handle,
                 PixelSize = new Size2(1920, 1080),
-                PresentOptions = PresentOptions.Immediately
+                PresentOptions = PresentOptions.RetainContents
             };
             var _factory = new Factory(FactoryType.SingleThreaded);
             font = new FontFactory();
@@ -172,7 +172,7 @@ namespace UnrealSharp
         Single LastYRotation = 0;
         Single CameraSinTheta = 0;
         Single CameraCosTheta = 0;
-        public Vector2 WorldToWindow(Vector3 targetLocation, Vector3 playerLocation, Vector3 cameraRotation, Single maxRange, Single radarSize)
+        public Vector2 WorldToWindow(Vector3 targetLocation, Vector3 playerLocation, Vector3 cameraRotation, Single maxRange, Single radarSize, Single radarSizeY = 0)
         {
             if (LastYRotation != cameraRotation.Y)
             {
@@ -181,11 +181,13 @@ namespace UnrealSharp
                 CameraCosTheta = (Single)Math.Cos(CameraRadians);
                 LastYRotation = cameraRotation.Y;
             }
+            if (radarSizeY == 0) radarSizeY = radarSize;
             radarSize /= 2;
+            radarSizeY /= 2;
             var diff = targetLocation - playerLocation;
-            var radarLoc = new Vector2(radarSize * diff.X / maxRange, radarSize * diff.Y / maxRange);
+            var radarLoc = new Vector2(radarSize * diff.X / maxRange, radarSizeY * diff.Y / maxRange);
             radarLoc = new Vector2(CameraCosTheta * radarLoc.X - CameraSinTheta * radarLoc.Y, CameraSinTheta * radarLoc.X + CameraCosTheta * radarLoc.Y);
-            radarLoc += new Vector2(radarSize, radarSize);
+            radarLoc += new Vector2(radarSize, radarSizeY);
             return radarLoc;
         }
         public void DrawLines(Color color, Vector2[] points)
@@ -206,7 +208,7 @@ namespace UnrealSharp
             if (targetTest.X < 0 || targetTest.Y < 0 || targetTest.X > overlayWindowForm.Width || targetTest.Y > overlayWindowForm.Height)
                 return;
 
-            Single l = 60f, w = 60f, h = 80f, o = 50f;
+            Single l = 60f, w = 60f, h = 140f, o = 50f;
 
             var zOffset = -40f;
             var xOffset = -20f;
