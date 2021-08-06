@@ -751,7 +751,7 @@ namespace UnrealSharp
                     sb.AppendLine("    }");
                 }
                 sb.AppendLine("}");
-                if (printedClasses == 0)
+                if (printedClasses == 0 && !dumpedPackages.Any(pack => pack.Dependencies.Contains(p)))
                     continue;
                 System.IO.File.WriteAllText(location + @"\" + p.Name + ".cs", sb.ToString());
             }
