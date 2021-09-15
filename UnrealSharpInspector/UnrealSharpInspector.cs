@@ -14,7 +14,8 @@ namespace UnrealSharpInspector
     public partial class UnrealSharpInspector : Form
     {
         //String staticGameName => "autogenerate";
-        String staticGameName => "FSD-Win64-Shipping";
+        //String staticGameName => "FSD-Win64-Shipping";
+        String staticGameName => "Mir4";
         Process process;
         Overlay esp;
         public List<UEObject> actors { get; set; } = new List<UEObject>();
