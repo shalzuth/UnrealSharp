@@ -763,15 +763,15 @@ namespace UnrealSharp
                 var sb = new StringBuilder();
                 sb.AppendLine("using UnrealSharp;");
                 sb.AppendLine("using Object = UnrealSharp.UEObject;");
-                foreach(var d in p.Dependencies) sb.AppendLine("using SDK" + d.FullName.Replace("/", ".") + "SDK;");
+                foreach (var d in p.Dependencies) sb.AppendLine("using SDK" + d.FullName.Replace("/", ".") + "SDK;");
                 sb.AppendLine("namespace SDK" + p.FullName.Replace("/", ".") + "SDK");
                 sb.AppendLine("{");
                 var printedClasses = 0;
-                foreach(var c in p.Classes)
+                foreach (var c in p.Classes)
                 {
                     if (c.Fields.Count > 0) printedClasses++;
-                   // sb.AppendLine("    [Namespace(\"" + c.Namespace + "\")]");
-                    sb.AppendLine("    public " + c.SdkType + " " + c.Name + ((c.Parent == null) ? "" : ( " : " + c.Parent)));
+                    // sb.AppendLine("    [Namespace(\"" + c.Namespace + "\")]");
+                    sb.AppendLine("    public " + c.SdkType + " " + c.Name + ((c.Parent == null) ? "" : (" : " + c.Parent)));
                     sb.AppendLine("    {");
                     if (c.SdkType != "enum")
                         sb.AppendLine("        public " + c.Name + "(ulong addr) : base(addr) { }");
