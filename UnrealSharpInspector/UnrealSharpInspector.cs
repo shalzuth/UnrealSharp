@@ -15,7 +15,7 @@ namespace UnrealSharpInspector
     {
         //String staticGameName => "autogenerate";
         //String staticGameName => "FSD-Win64-Shipping";
-        String staticGameName => "Mir4";
+        String staticGameName => "ANVIL-WinGDK-Shipping";
         Process process;
         Overlay esp;
         public List<UEObject> actors { get; set; } = new List<UEObject>();
@@ -105,7 +105,7 @@ namespace UnrealSharpInspector
                 while ((field = UnrealEngine.Memory.ReadProcessMemory<UInt64>(field + UEObject.fieldNextOffset)) > 0)
                 {
                     var fName = UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(field + UEObject.fieldNameOffset));
-                    var fType = actor.GetFieldType(field);
+                    var fType = actor.GetFieldTypeName(field);
                     var fValue = "(" + field.ToString() + ")";
                     var offset = (UInt32)actor.GetFieldOffset(field);
                     if (fType == "BoolProperty")

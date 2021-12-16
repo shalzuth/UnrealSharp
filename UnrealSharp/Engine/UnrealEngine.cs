@@ -257,9 +257,10 @@ namespace UnrealSharp
                     if (childClassPtr == 0x0) continue;
                     //var classNameOffset = UEObject.NewFName ? 0 : UEObject.fieldNameOffset;
                     var classNameOffset = UEObject.fieldNameOffset;
+                    //classNameOffset =UEObject.nameOffset;
                     var classNameIndex = Memory.ReadProcessMemory<Int32>(childClassPtr + classNameOffset);
                     var name = UEObject.GetName(classNameIndex);
-                    if (name == "ObjectProperty")
+                    if (name == "Level" || name == "ObjectProperty")
                     {
                         UEObject.fieldClassOffset = c;
                         foundNextField = true;
@@ -383,10 +384,17 @@ namespace UnrealSharp
             var testObj = new UEObject(0);
             var sb = new StringBuilder();
             var i = 0;
+            var badCount = 0;
             while (true)
             {
                 var name = UEObject.GetName(i);
-                if (name == "badIndex") break;
+                if (name == "badIndex" || name == "null")
+                {
+                    badCount++;
+                    if (badCount > 0x100) break;
+                    i++; continue;
+                }
+                badCount = 0;
                 sb.AppendLine("[" + i + " / " + (i).ToString("X") + "] " + name);
                 i += name.Length / 2 + name.Length % 2 + 1;
             }
@@ -475,17 +483,32 @@ namespace UnrealSharp
             }
             else if (fType == "NameProperty")
             {
-                fType = "unk";
+                fType = "string";
+                gettersetter = "{ get { return this[nameof(" + fName + ")].GetValue<" + fType + ">(); } set { this[nameof(" + fName + ")].SetValue<" + fType + ">(value); } }";
             }
             else if (fType == "ArrayProperty")
             {
                 var inner = UnrealEngine.Memory.ReadProcessMemory<UInt64>(fAddr + UEObject.propertySize);
                 var innerClass = UnrealEngine.Memory.ReadProcessMemory<UInt64>(inner + UEObject.fieldClassOffset);
-                var structFieldIndex = UnrealEngine.Memory.ReadProcessMemory<Int32>(innerClass + UEObject.nameOffset);
-                fType = UEObject.GetName(structFieldIndex);
-                var innerType = GetTypeFromFieldAddr(fName, fType, inner, out gettersetter);
-                gettersetter = "{ get { return new Array<" + innerType + ">(this[nameof(" + fName + ")].Address); } }";// set { this[\"" + fName + "\"] = value; } }";
-                fType = "Array<" + innerType + ">";
+                //if (innerClass == 0)
+                {
+                    fType = new UEObject(0).GetFieldTypeName(inner);
+                    //fType = UEObject.GetName(0);
+                    var innerType = GetTypeFromFieldAddr(fName, fType, inner, out gettersetter);
+                    gettersetter = "{ get { return new Array<" + innerType + ">(this[nameof(" + fName + ")].Address); } }";// set { this[\"" + fName + "\"] = value; } }";
+                    fType = "Array<" + innerType + ">";
+
+                }
+                if (false && innerClass != 0)
+                {
+                    var structFieldIndex = UnrealEngine.Memory.ReadProcessMemory<Int32>(innerClass + UEObject.nameOffset);
+                    fType = UEObject.GetName(structFieldIndex);
+                    var innerType = GetTypeFromFieldAddr(fName, fType, inner, out gettersetter);
+                    if (innerType == "None")
+                        Console.Write("");
+                    gettersetter = "{ get { return new Array<" + innerType + ">(this[nameof(" + fName + ")].Address); } }";// set { this[\"" + fName + "\"] = value; } }";
+                    fType = "Array<" + innerType + ">";
+                }
             }
             else if (fType == "SoftObjectProperty")
             {
@@ -540,6 +563,7 @@ namespace UnrealSharp
                 fType = "Object";
                 gettersetter = "{ get { return this[nameof(" + fName + ")]; } set { this[nameof(" + fName + ")] = value; } }";
             }
+            if (gettersetter.Contains("nameof(base)")) gettersetter = gettersetter.Replace("nameof(base)", "\"base\"");
             return fType;
         }
         public class Package
@@ -661,13 +685,14 @@ namespace UnrealSharp
                         while ((field = UnrealEngine.Memory.ReadProcessMemory<UInt64>(field + UEObject.fieldNextOffset)) > 0)
                         {
                             var fName = UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(field + UEObject.fieldNameOffset));
-                            var fType = obj.GetFieldType(field);
+                            var fType = obj.GetFieldTypeName(field);
                             var fValue = "(" + field.ToString() + ")";
                             var offset = (UInt32)obj.GetFieldOffset(field);
                             var gettersetter = "{ get { return new {0}(this[\"{1}\"].Address); } set { this[\"{1}\"] = value; } }";
                             fType = GetTypeFromFieldAddr(fName, fType, field, out gettersetter);
                             //if (typeName == "struct") gettersetter = ";";
                             if (fName == className) fName += "_value";
+                            if (fName == "base") fName += "_value";
                             if (fType == "Function")
                             {
                                 var func = new Package.SDKClass.SDKFunctions { Name = fName };
@@ -675,7 +700,8 @@ namespace UnrealSharp
                                 while ((fField = UnrealEngine.Memory.ReadProcessMemory<UInt64>(fField + UEObject.fieldNextOffset)) > 0)
                                 {
                                     var pName = UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(fField + UEObject.fieldNameOffset));
-                                    var pType = obj.GetFieldType(fField);
+                                    if (pName == "base") pName += "_value";
+                                    var pType = obj.GetFieldTypeName(fField);
                                     pType = GetTypeFromFieldAddr("", pType, fField, out _);
                                     func.Params.Add(new Package.SDKClass.SDKFields { Name = pName, Type = pType });
                                 }
@@ -695,7 +721,8 @@ namespace UnrealSharp
                                 while ((fField = UnrealEngine.Memory.ReadProcessMemory<UInt64>(fField + UEObject.fieldNextOffset)) > 0)
                                 {
                                     var pName = UEObject.GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(fField + UEObject.fieldNameOffset));
-                                    var pType = obj.GetFieldType(fField);
+                                    if (pName == "base") pName += "_value";
+                                    var pType = obj.GetFieldTypeName(fField);
                                     pType = GetTypeFromFieldAddr("", pType, fField, out _);
                                     func.Params.Add(new Package.SDKClass.SDKFields { Name = pName, Type = pType });
                                 }
@@ -991,13 +1018,18 @@ namespace UnrealSharp
             }
             return sb.ToString();
         }
-        public String GetFieldType(UInt64 fieldAddr)
+        public String GetFieldTypeName(UInt64 fieldAddr)
         {
             if (FieldAddrToType.ContainsKey(fieldAddr)) return FieldAddrToType[fieldAddr];
+            // 4.25 only??
+            var baseTypeOffset = 8u;
+            var baseType = UnrealEngine.Memory.ReadProcessMemory<UInt64>(fieldAddr + baseTypeOffset);
             var fieldType = UnrealEngine.Memory.ReadProcessMemory<UInt64>(fieldAddr + fieldClassOffset);
-            //var name = GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(fieldType + (NewFName ? 0 : fieldNameOffset)));
-            var name = GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(fieldType + fieldNameOffset));
+            var fieldNameIndex = UnrealEngine.Memory.ReadProcessMemory<Int32>(baseType);
+            var fieldTypeName = GetName(fieldNameIndex);
             FieldAddrToType[fieldAddr] = name;
+            return fieldTypeName;
+            var name = GetName(UnrealEngine.Memory.ReadProcessMemory<Int32>(fieldType + fieldNameOffset));
             return name;
         }
         UInt64 GetFieldAddr(UInt64 origClassAddr, UInt64 classAddr, String fieldName)
@@ -1103,7 +1135,7 @@ namespace UnrealSharp
             {
                 var fieldAddr = GetFieldAddr(key);
                 if (fieldAddr == 0) return null;
-                var fieldType = GetFieldType(fieldAddr);
+                var fieldType = GetFieldTypeName(fieldAddr);
                 var offset = (UInt32)GetFieldOffset(fieldAddr);
                 UEObject obj;
                 if (fieldType == "ObjectProperty" || fieldType == "ScriptStruct")
