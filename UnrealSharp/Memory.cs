@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -9,10 +10,16 @@ namespace UnrealSharp
 {
     public unsafe class Memory
     {
-        [DllImport("kernel32")] static extern IntPtr OpenProcess(UInt32 dwDesiredAccess, Int32 bInheritHandle, Int32 dwProcessId);
-        [DllImport("kernel32")] static extern Int32 ReadProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, [In, Out] Byte[] buffer, Int32 size, out Int32 lpNumberOfBytesRead);
-        //public static delegate* unmanaged[Stdcall] <IntPtr, UInt64, Byte[], Int32, out Int32, Int32> ReadProcMemInternal;
-        [DllImport("kernel32")] static extern Boolean WriteProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, Byte[] buffer, Int32 nSize, out Int32 lpNumberOfBytesWritten);
+        public static readonly nint kernel = NativeLibrary.Load("kernel32.dll");
+        public static readonly delegate* unmanaged[Stdcall]<int, int, int, nint> OpenProcess = (delegate* unmanaged[Stdcall]<int, int, int, nint>)NativeLibrary.GetExport(kernel, nameof(OpenProcess));
+        public static readonly delegate* unmanaged[Stdcall]<nint, nint, byte[], int, out int, int> ReadProcessMemory2 = (delegate* unmanaged[Stdcall]<nint, nint, byte[], int, out int, int>)NativeLibrary.GetExport(kernel, nameof(ReadProcessMemory));
+        //public static readonly delegate* unmanaged[Stdcall]<nint, int> CloseHandle;
+        //public static readonly delegate* unmanaged[Stdcall]<nint, nint, void*, nint, out nint, uint> NtReadVirtualMemory;
+
+
+        // [DllImport("kernel32")] static extern IntPtr OpenProcess(UInt32 dwDesiredAccess, Int32 bInheritHandle, Int32 dwProcessId);
+        //[DllImport("kernel32")] static extern Int32 ReadProcessMemory(IntPtr hProcess, UInt64 lpBaseAddress, [In, Out] Byte[] buffer, Int32 size, out Int32 lpNumberOfBytesRead);
+        [DllImport("kernel32")] static extern Boolean WriteProcessMemory(nint hProcess, nint lpBaseAddress, Byte[] buffer, Int32 nSize, out Int32 lpNumberOfBytesWritten);
         [DllImport("kernel32")] static extern Int32 CloseHandle(IntPtr hObject);
         [DllImport("kernel32")] static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, UInt32 dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, UInt32 dwCreationFlags, IntPtr lpThreadId);
         [DllImport("kernel32")] static extern UInt32 WaitForSingleObject(IntPtr hHandle, UInt32 dwMilliseconds);
@@ -22,24 +29,39 @@ namespace UnrealSharp
         [DllImport("user32")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out Int32 lpdwProcessId);
         public IntPtr procHandle = IntPtr.Zero;
         public Process Process { get; private set; }
-        public UInt64 BaseAddress { get { return (UInt64)Process.MainModule.BaseAddress; } }
+        public nint BaseAddress { get { return Process.MainModule.BaseAddress; } }
+        [StructLayout(LayoutKind.Sequential, Pack = 0)] public struct OBJECT_ATTRIBUTES
+        {
+            public int Length;
+            public IntPtr RootDirectory;
+            public IntPtr ObjectName;
+            public uint Attributes;
+            public IntPtr SecurityDescriptor;
+            public IntPtr SecurityQualityOfService;
+        }
+        [StructLayout(LayoutKind.Sequential)] public struct CLIENT_ID
+        {
+            public IntPtr UniqueProcess;
+            public IntPtr UniqueThread;
+        }
         public Memory(Process proc)
         {
+            //r result = NtOpenProcess(ref hProcess, 0x001F0FFF, ref oa, ref ci);
             //var handle = NativeLibrary.Load("kernel32.dll");
             //ReadProcMemInternal = (delegate* unmanaged[Stdcall]<IntPtr, UInt64, Byte[], Int32, out Int32, Int32>)NativeLibrary.GetExport(handle, "ReadProcessMemory");
             Process = proc;
             if (Process == null) return;
-            OpenProcess(Process.Id);
+            OpenProcessById(Process.Id);
         }
         public Memory(String name)
         {
             var procs = Process.GetProcessesByName(name);
             Process = procs.FirstOrDefault();
             if (Process == null) return;
-            OpenProcess(Process.Id);
+            OpenProcessById(Process.Id);
         }
         private Dictionary<IntPtr, int> _allocations = new Dictionary<IntPtr, int>();
-        public void OpenProcess(Int32 procId)
+        public void OpenProcessById(Int32 procId)
         {
             procHandle = OpenProcess(0x38, 1, procId);
         }
@@ -48,7 +70,7 @@ namespace UnrealSharp
         {
             return ReadProcMemInternal(hProcess, lpBaseAddress, buffer, size, out lpNumberOfBytesRead);
         }*/
-        public Byte[] ReadProcessMemory(UInt64 addr, Int32 length)
+        public Byte[] ReadProcessMemory(nint addr, Int32 length)
         {
             var maxSize = 0x64000;
             var buffer = new Byte[length];
@@ -56,21 +78,21 @@ namespace UnrealSharp
             {
                 var buf = new Byte[0x64000];
                 var blockSize = (i == (length / maxSize)) ? length : i % maxSize;
-                ReadProcessMemory(procHandle, addr + (UInt64)(i * maxSize), buf, blockSize, out Int32 bytesRead);
+                ReadProcessMemory2(procHandle, addr + i * maxSize, buf, blockSize, out Int32 bytesRead);
                 Array.Copy(buf, 0, buffer, i * maxSize, blockSize);
             }
             return buffer;
         }
-        public unsafe Object ReadProcessMemory(Type type, UInt64 addr)
+        public unsafe Object ReadProcessMemory(Type type, nint addr)
         {
             if (type == typeof(String))
             {
                 var stringLength = maxStringLength;
                 List<Byte> bytes = new List<Byte>();
                 var isUtf16 = false;
-                for (UInt32 i = 0; i < 32; i++)
+                for (var i = 0; i < 64; i++)
                 {
-                    var letters8 = ReadProcessMemory<UInt64>(addr + i * 8);
+                    var letters8 = ReadProcessMemory<nint>(addr + i * 8);
                     var tempBytes = BitConverter.GetBytes(letters8);
                     for (int j = 0; j < 8 && stringLength > 0; j++)
                     {
@@ -89,7 +111,7 @@ namespace UnrealSharp
                 return (Object)Encoding.UTF8.GetString(bytes.ToArray());
             }
             var buffer = new Byte[Marshal.SizeOf(type)];
-            ReadProcessMemory(procHandle, addr, buffer, Marshal.SizeOf(type), out Int32 bytesRead);
+            ReadProcessMemory2(procHandle, addr, buffer, Marshal.SizeOf(type), out Int32 bytesRead);
             var structPtr = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             var obj = Marshal.PtrToStructure(structPtr.AddrOfPinnedObject(), type);
             var members = obj.GetType().GetFields();
@@ -120,7 +142,7 @@ namespace UnrealSharp
                      if (validStr)
                          continue;*/
                     var strPtr = Marshal.ReadIntPtr(structPtr.AddrOfPinnedObject(), offset);
-                    var str = ReadProcessMemory<String>((UInt32)strPtr);
+                    var str = ReadProcessMemory<String>(strPtr);
                     if (str != "null" && str != "")
                         member.SetValueDirect(__makeref(obj), str);
                 }
@@ -133,26 +155,17 @@ namespace UnrealSharp
             structPtr.Free();
             return obj;
         }
-        public T ReadProcessMemory<T>(UInt64 addr)
+        public T ReadProcessMemory<T>(nint addr)
         {
             return (T)ReadProcessMemory(typeof(T), addr);
         }
-        public void WriteProcessMemory(UInt64 addr, Byte[] buffer)
+        public void WriteProcessMemory(nint addr, Byte[] buffer)
         {
             WriteProcessMemory(procHandle, addr, buffer, buffer.Length, out Int32 bytesRead);
         }
-        public void WriteProcessMemory<T>(UInt64 addr, T value)
+        public void WriteProcessMemory<T>(nint addr, T value)
         {
-            if (value.GetType().IsEnum)
-            {
-                var enumBaseType = Enum.GetUnderlyingType(value.GetType());
-                if (Marshal.SizeOf(enumBaseType) == 2) WriteProcessMemory(addr, (Int16)(Object)value);
-                else if (Marshal.SizeOf(enumBaseType) == 4) WriteProcessMemory(addr, (Int32)(Object)value);
-                else if (Marshal.SizeOf(enumBaseType) == 8) WriteProcessMemory(addr, (Int64)(Object)value);
-                else throw new Exception("unk enum size");
-                return;
-            }
-            var objSize =  Marshal.SizeOf(value);
+            var objSize = Marshal.SizeOf(value);
             var objBytes = new Byte[objSize];
             var objPtr = Marshal.AllocHGlobal(objSize);
             Marshal.StructureToPtr(value, objPtr, true);
@@ -160,10 +173,10 @@ namespace UnrealSharp
             Marshal.FreeHGlobal(objPtr);
             WriteProcessMemory(procHandle, addr, objBytes, objBytes.Length, out Int32 bytesRead);
         }
-        public UInt64 Execute(UInt64 fPtr, UInt64 a1, UInt64 a2, UInt64 a3, UInt64 a4, params UInt64[] args)
+        public nint Execute(nint fPtr, nint a1, nint a2, nint a3, nint a4, params nint[] args)
         {
             var retValPtr = VirtualAllocEx(procHandle, IntPtr.Zero, 0x40, 0x1000, 0x40);
-            WriteProcessMemory((UInt64)retValPtr, BitConverter.GetBytes((UInt64)0xdeadbeefcafef00d));
+            WriteProcessMemory(retValPtr, BitConverter.GetBytes((nint)0xcafeb00));
 
             var asm = new List<Byte>();
             asm.AddRange(new Byte[] { 0x48, 0x83, 0xEC }); // sub rsp
@@ -199,29 +212,28 @@ namespace UnrealSharp
             asm.AddRange(BitConverter.GetBytes((UInt64)retValPtr));
             asm.Add(0xC3); // ret
             var codePtr = VirtualAllocEx(procHandle, IntPtr.Zero, asm.Count, 0x1000, 0x40);
-            WriteProcessMemory(procHandle, (UInt64)codePtr, asm.ToArray(), asm.Count, out Int32 bytesRead);
+            WriteProcessMemory(procHandle, codePtr, asm.ToArray(), asm.Count, out Int32 bytesRead);
 
             var thread = CreateRemoteThread(procHandle, IntPtr.Zero, 0, codePtr, IntPtr.Zero, 0, IntPtr.Zero);
             WaitForSingleObject(thread, 10000);
-            var returnValue = ReadProcessMemory<UInt64>((UInt64)retValPtr);
+            var returnValue = ReadProcessMemory<nint>(retValPtr);
             VirtualFreeEx(procHandle, codePtr, 0, 0x8000);
             VirtualFreeEx(procHandle, retValPtr, 0, 0x8000);
             CloseHandle(thread);
             return returnValue;
         }
-        public T ExecuteUEFunc<T>(IntPtr vtableAddr, IntPtr objAddr, IntPtr funcAddr, params Object[] args)
+        public T ExecuteUEFunc<T>(nint vtableAddr, nint objAddr, nint funcAddr, params Object[] args)
         {
             //var retValPtr = VirtualAllocEx(procHandle, IntPtr.Zero, 0x40, 0x1000, 0x40);
             //WriteProcessMemory((UInt64)retValPtr, BitConverter.GetBytes((UInt64)0xdeadbeefcafef00d));
             var dummyParms = VirtualAllocEx(procHandle, IntPtr.Zero, 0x100, 0x1000, 0x40);
 
-            WriteProcessMemory((UInt64)dummyParms, BitConverter.GetBytes((UInt64)0xffffffffffffffff));
-            var offset = 0u;
+            WriteProcessMemory(dummyParms, BitConverter.GetBytes((UInt64)0xffffffffffffffff));
+            var offset = 0;
             foreach (var obj in args)
             {
-                WriteProcessMemory((UInt64)dummyParms + offset, obj);
-                var outputType = obj.GetType().IsEnum ? Enum.GetUnderlyingType(obj.GetType()) : obj.GetType();
-                offset += (UInt32)Marshal.SizeOf(outputType);
+                WriteProcessMemory(dummyParms + offset, obj);
+                offset += Marshal.SizeOf(obj);
             }
 
             var asm = new List<Byte>();
@@ -246,12 +258,12 @@ namespace UnrealSharp
             //asm.AddRange(BitConverter.GetBytes((UInt64)retValPtr));
             asm.Add(0xC3); // ret
             var codePtr = VirtualAllocEx(procHandle, IntPtr.Zero, asm.Count, 0x1000, 0x40);
-            WriteProcessMemory(procHandle, (UInt64)codePtr, asm.ToArray(), asm.Count, out Int32 bytesRead);
+            WriteProcessMemory(procHandle, codePtr, asm.ToArray(), asm.Count, out Int32 bytesRead);
 
             IntPtr thread = CreateRemoteThread(procHandle, IntPtr.Zero, 0, codePtr, IntPtr.Zero, 0, IntPtr.Zero);
             WaitForSingleObject(thread, 10000);
 
-            var returnValue = ReadProcessMemory<T>((UInt64)dummyParms);
+            var returnValue = ReadProcessMemory<T>(dummyParms);
             VirtualFreeEx(procHandle, dummyParms, 0, 0x8000);
             VirtualFreeEx(procHandle, codePtr, 0, 0x8000);
             //VirtualFreeEx(procHandle, retValPtr, 0, 0x8000);
@@ -259,17 +271,17 @@ namespace UnrealSharp
             return returnValue;
         }
 
-        public List<UInt64> SearchProcessMemory(String pattern, UInt64 start, UInt64 end, Boolean absolute = true)
+        public List<nint> SearchProcessMemory(String pattern, nint start, nint end, Boolean absolute = true)
         {
             var arrayOfBytes = pattern.Split(' ').Select(b => b.Contains("?") ? -1 : Convert.ToInt32(b, 16)).ToArray();
-            var addresses = new List<UInt64>();
+            var addresses = new List<nint>();
             var iters = 1 + ((end - start) / 0x1000);
             if (iters == 0) iters++;
             for (uint i = 0; i < iters; i++)
             {
                 var buffer = new Byte[0x1000];
-                ReadProcessMemory(procHandle, (UInt32)(start + i * 0x1000), buffer, 0x1000, out Int32 bytesRead);
-                var results = Scan(buffer, arrayOfBytes).Select(j => (UInt64)j + start + i * 0x1000).ToList();
+                ReadProcessMemory2(procHandle, (nint)(start + i * 0x1000), buffer, 0x1000, out Int32 bytesRead);
+                var results = Scan(buffer, arrayOfBytes).Select(j => (nint)(j + start + i * 0x1000)).ToList();
                 if (start + (i + 1) * 0x1000 > end && results.Count > 0)
                     results.RemoveAll(r => r > end);
                 addresses.AddRange(results);
@@ -279,15 +291,15 @@ namespace UnrealSharp
             else
                 return addresses.Select(a => a - start).ToList();
         }
-        public List<UInt64> ReSearchProcessMemory(List<UInt64> existing, String pattern)
+        public List<nint> ReSearchProcessMemory(List<nint> existing, String pattern)
         {
             var arrayOfBytes = pattern.Split(' ').Select(b => b.Contains("?") ? -1 : Convert.ToInt32(b, 16)).ToArray();
-            var addresses = new List<UInt64>();
+            var addresses = new List<nint>();
             foreach (var val in existing)
             {
                 var buffer = new Byte[4];
-                ReadProcessMemory(procHandle, (UInt32)val, buffer, 4, out Int32 bytesRead);
-                var results = Scan(buffer, arrayOfBytes).Select(j => (UInt64)j + val).ToList();
+                ReadProcessMemory2(procHandle, (nint)val, buffer, 4, out int bytesRead);
+                var results = Scan(buffer, arrayOfBytes).Select(j => j + val).ToList();
                 addresses.AddRange(results);
             }
             return addresses;
@@ -295,7 +307,7 @@ namespace UnrealSharp
         public String DumpSurroundString(UInt64 start)
         {
             var buffer = new Byte[0x100];
-            ReadProcessMemory(procHandle, (UInt32)(start - 0x80), buffer, buffer.Length, out Int32 bytesRead);
+            ReadProcessMemory2(procHandle, (nint)(start - 0x80), buffer, buffer.Length, out Int32 bytesRead);
             var val = "";
             for (int i = 0x7f; i > 0; i--)
             {
@@ -311,16 +323,16 @@ namespace UnrealSharp
             }
             return val;
         }
-        public String GetString(UInt64 start)
+        public String GetString(nint start)
         {
             var buffer = new Byte[0x1000];
-            ReadProcessMemory(procHandle, (UInt32)(start), buffer, buffer.Length, out Int32 bytesRead);
+            ReadProcessMemory2(procHandle, start, buffer, buffer.Length, out Int32 bytesRead);
             return String.Join(",", buffer.Select(b => "0x" + b.ToString("X2")));
         }
         static Byte[] FileBytes;
-        public static List<Int32> Scan(Byte[] buf, Int32[] pattern)
+        public static List<nint> Scan(Byte[] buf, Int32[] pattern)
         {
-            var addresses = new List<Int32>();
+            var addresses = new List<nint>();
 
             for (int i = 0; i <= buf.Length - pattern.Length; i++)
             {
@@ -355,8 +367,8 @@ namespace UnrealSharp
             var arrayOfBytes = sig.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(b => b.Contains("?") ? -1 : Convert.ToInt32(b, 16)).ToArray();
             var offs = Scan(FileBytes, arrayOfBytes);
             if (isOffset)
-                return BitConverter.ToUInt32(FileBytes, offs.First() + offset);
-            var addr = BitConverter.ToUInt32(FileBytes, offs.First() + offset) - GetImageBase();
+                return BitConverter.ToUInt32(FileBytes, (int)offs.First() + offset);
+            var addr = BitConverter.ToUInt32(FileBytes, (int)offs.First() + offset) - GetImageBase();
             return addr;
         }
         public static UInt32 FindAddr(String sig)
