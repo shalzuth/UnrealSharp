@@ -12,7 +12,7 @@ jobs:
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 8.0.100-preview.6.23330.14
+        dotnet-version: 8.0.100-preview.6.23330.14 # https://github.com/dotnet/core/blob/main/release-notes/8.0/preview/8.0.0-preview.6.md
     - name: Build
       run: dotnet build -c Release
     - name: Test
