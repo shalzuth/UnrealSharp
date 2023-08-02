@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <PlatformTarget>x64</PlatformTarget>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <Version>1.0.0.1</Version>
   </PropertyGroup>
 
 </Project>
