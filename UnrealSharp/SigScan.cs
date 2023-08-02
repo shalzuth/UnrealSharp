@@ -92,7 +92,7 @@ namespace UnrealSharp
         /// 
         ///     The memory dumped from the external process.
         /// </summary>
-        private byte[] m_vDumpedRegion;
+        public byte[] m_vDumpedRegion;
 
         /// <summary>
         /// m_vProcess
@@ -156,7 +156,7 @@ namespace UnrealSharp
         ///     properties to dump a memory region.
         /// </summary>
         /// <returns>Boolean based on RPM results and valid properties.</returns>
-        private bool DumpMemory()
+        public bool DumpMemory()
         {
             try
             {

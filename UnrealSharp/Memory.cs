@@ -30,6 +30,7 @@ namespace UnrealSharp
         public IntPtr procHandle = IntPtr.Zero;
         public Process Process { get; private set; }
         public nint BaseAddress { get { return Process.MainModule.BaseAddress; } }
+        public nint MainWindowHandle { get { return Process.MainWindowHandle; } }
         [StructLayout(LayoutKind.Sequential, Pack = 0)] public struct OBJECT_ATTRIBUTES
         {
             public int Length;
@@ -357,37 +358,50 @@ namespace UnrealSharp
         {
             FileBytes = System.IO.File.ReadAllBytes(file);
         }
-        public static UInt32 GetImageBase()
+        public static int GetImageBase()
         {
             var pe = BitConverter.ToUInt16(FileBytes, 0x3c);
-            return BitConverter.ToUInt32(FileBytes, pe + 0x34);
+            return BitConverter.ToInt32(FileBytes, pe + 0x34);
         }
-        public static UInt32 FindAddr(String sig, Int32 offset, Boolean isOffset = false)
+        public static int FindAddr(String sig, Int32 offset, Boolean isOffset = false)
         {
             var arrayOfBytes = sig.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Select(b => b.Contains("?") ? -1 : Convert.ToInt32(b, 16)).ToArray();
             var offs = Scan(FileBytes, arrayOfBytes);
             if (isOffset)
-                return BitConverter.ToUInt32(FileBytes, (int)offs.First() + offset);
-            var addr = BitConverter.ToUInt32(FileBytes, (int)offs.First() + offset) - GetImageBase();
+                return BitConverter.ToInt32(FileBytes, (int)offs.First() + offset);
+            var addr = BitConverter.ToInt32(FileBytes, (int)offs.First() + offset) - GetImageBase();
             return addr;
         }
-        public static UInt32 FindAddr(String sig)
+        public static nint FindAddr(String sig)
         {
             var arrayOfBytes = sig.Split(' ').Select(b => b.Contains("?") ? -1 : Convert.ToInt32(b, 16)).ToArray();
             var offs = Scan(FileBytes, arrayOfBytes);
-            return (UInt32)offs.First() + GetImageBase();
+            return offs.First() + GetImageBase();
         }
-        public IntPtr FindPattern(String pattern)
+        public nint FindPattern(String pattern)
         {
             return FindPattern(pattern, Process.MainModule.BaseAddress, Process.MainModule.ModuleMemorySize);
         }
-        public List<IntPtr> FindStringRefs(String str)
+        public nint FindStringRef(String str)
         {
-            var pattern2 = BitConverter.ToString(Encoding.Unicode.GetBytes(str)).Replace("-", " ");
-            var pattern = BitConverter.ToString(Encoding.UTF8.GetBytes(str).Reverse().ToArray()).Replace("-", " ");
-            return FindPatterns(pattern);
+            var stringAddr = FindPattern(BitConverter.ToString(Encoding.Unicode.GetBytes(str)).Replace("-", " "));
+            var sigScan = new SigScan(Process, Process.MainModule.BaseAddress, Process.MainModule.ModuleMemorySize);
+            sigScan.DumpMemory();
+            for (var i = 0; i < sigScan.Size; i++)
+            {
+                if ((sigScan.m_vDumpedRegion[i] == 0x48 || sigScan.m_vDumpedRegion[i] == 0x4c) && sigScan.m_vDumpedRegion[i + 1] == 0x8d)
+                {
+                    var jmpTo = BitConverter.ToInt32(sigScan.m_vDumpedRegion, i + 3);
+                    var addr = sigScan.Address + i + jmpTo + 7;
+                    if (addr == stringAddr)
+                    {
+                        return Process.MainModule.BaseAddress + i;
+                    }
+                }
+            }
+            return 0;
         }
-        public IntPtr FindPattern(String pattern, IntPtr start, Int32 length)
+        public nint FindPattern(String pattern, nint start, Int32 length)
         {
             //var skip = pattern.ToLower().Contains("cc") ? 0xcc : pattern.ToLower().Contains("aa") ? 0xaa : 0;
             var sigScan = new SigScan(Process, start, length);
@@ -395,7 +409,7 @@ namespace UnrealSharp
             var strMask = String.Join("", pattern.Split(' ').Select(b => b.Contains("?") ? '?' : 'x'));
             return sigScan.FindPattern(arrayOfBytes, strMask, 0);
         }
-        public List<IntPtr> FindPatterns(String pattern)
+        public List<nint> FindPatterns(String pattern)
         {
             //var skip = pattern.ToLower().Contains("cc") ? 0xcc : pattern.ToLower().Contains("aa") ? 0xaa : 0;
             var sigScan = new SigScan(Process, Process.MainModule.BaseAddress, Process.MainModule.ModuleMemorySize);

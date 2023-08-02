@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using static UnrealSharp.UnrealEngine;
@@ -32,7 +34,9 @@ namespace UnrealSharp
                 //DumpGNames();
             }
             {
-                GWorldPtrPattern = Memory.FindPattern("48 89 05 ? ? ? ? 48 8B 76 78 F6 86");
+                var stringAddr = Memory.FindStringRef("    SeamlessTravel FlushLevelStreaming");
+                GWorldPtrPattern = Memory.FindPattern("48 89 05", stringAddr - 0x500, 0x500);
+                //GWorldPtrPattern = Memory.FindPattern("48 89 05 ? ? ? ? 48 8B 76 78 F6 86");
                 GObjectsPattern = Memory.FindPattern("48 8B 05 ? ? ? ? 48 8B 0C C8 48 8D 04 D1 EB 06");
 
                 var offset = UnrealEngine.Memory.ReadProcessMemory<int>(GWorldPtrPattern + 3);
@@ -723,19 +727,32 @@ namespace UnrealSharp
                 return _arrayCache;
             }
         }
-        public T this[int index] { get { return (T)Activator.CreateInstance(typeof(T), (nint)BitConverter.ToUInt64(ArrayCache, index * 8)); } }
+        public T this[int index]
+        {
+            get
+            {
+                if (index >= Num) return (T)Activator.CreateInstance(typeof(T), (nint)0);
+                return (T)Activator.CreateInstance(typeof(T), (nint)BitConverter.ToUInt64(ArrayCache, index * 8));
+            }
+        }
         public T this[int index, bool t]
         {
             get {
-                var obj = (T)Activator.CreateInstance(typeof(T), (nint)Value + index * 0x28);
                 if (typeof(T).IsAssignableTo(typeof(UEObject)))
                 {
+                    var subStructSize = 0x28;// (int)typeof(T).GetField("size").GetValue(null);
+                    var obj = (T)Activator.CreateInstance(typeof(T), (nint)Value + index * subStructSize);
                     var q = obj as UEObject;
                     q._classAddr = _substructAddr;
                     obj = (T)(object)q;
+                    return obj;
                 }
-                //if (_substructAddr != 0) obj
-                return obj;
+                else
+                {
+                    var obj = (T)Activator.CreateInstance(typeof(T), (nint)Value + index * Marshal.SizeOf(typeof(T)));
+                    return obj;
+
+                }
             }
         }
     }
@@ -933,7 +950,7 @@ namespace UnrealSharp
             FieldAddrToType[fieldAddr] = name;
             return name;
         }
-        nint GetFieldAddr(nint origClassAddr, nint classAddr, String fieldName)
+        nint GetFieldAddr(nint origClassAddr, nint classAddr, string fieldName)
         {
             if (ClassFieldToAddr.ContainsKey(origClassAddr) && ClassFieldToAddr[origClassAddr].ContainsKey(fieldName)) return ClassFieldToAddr[origClassAddr][fieldName];
             var field = classAddr + childPropertiesOffset - fieldNextOffset;
@@ -943,7 +960,7 @@ namespace UnrealSharp
                 if (fName == fieldName)
                 {
                     if (!ClassFieldToAddr.ContainsKey(origClassAddr))
-                        ClassFieldToAddr[origClassAddr] = new ConcurrentDictionary<String, nint>();
+                        ClassFieldToAddr[origClassAddr] = new ConcurrentDictionary<string, nint>();
                     ClassFieldToAddr[origClassAddr][fieldName] = field;
                     return field;
                 }
@@ -953,13 +970,13 @@ namespace UnrealSharp
             if (parentClass == 0)
             {
                 if (!ClassFieldToAddr.ContainsKey(origClassAddr))
-                    ClassFieldToAddr[origClassAddr] = new ConcurrentDictionary<String, nint>();
+                    ClassFieldToAddr[origClassAddr] = new ConcurrentDictionary<string, nint>();
                 ClassFieldToAddr[origClassAddr][fieldName] = 0;
                 return 0;
             }
             return GetFieldAddr(origClassAddr, parentClass, fieldName);
         }
-        public nint GetFieldAddr(String fieldName)
+        public nint GetFieldAddr(string fieldName)
         {
             return GetFieldAddr(ClassAddr, ClassAddr, fieldName);
         }
@@ -1169,10 +1186,15 @@ namespace UnrealSharp
                         fType = "Single";
                         fValue = BitConverter.ToSingle(BitConverter.GetBytes(this[fName].Value), 0).ToString();
                     }
+                    else if (fType == "DoubleProperty")
+                    {
+                        fType = "Double";
+                        fValue = BitConverter.ToDouble(BitConverter.GetBytes(this[fName].Value), 0).ToString();
+                    }
                     else if (fType == "IntProperty")
                     {
                         fType = "Int32";
-                        fValue = this[fName].Value.ToString();
+                        fValue = ((int)this[fName].Value).ToString("X");
                     }
                     else if (fType == "ObjectProperty" || fType == "StructProperty")
                     {
@@ -1183,7 +1205,7 @@ namespace UnrealSharp
                     {
                         info = fType + " " + fName + " = " + fValue
                     });*/
-                    fields.Add(fType + " " + fName + " = " + fValue);
+                    fields.Add(fType + " " + fName + " = " + fValue + " ( @ " + offset.ToString("X") + " - " + (this.Address + offset).ToString("X") + " )");
                 }
 
                 field = tempEntity + UEObject.childrenOffset - UEObject.funcNextOffset;
@@ -1197,6 +1219,7 @@ namespace UnrealSharp
             var obj = new
             {
                 name = ClassName + " : " + GetFullPath(),
+                hierarchy = GetHierachy(),
                 fields
             };
             return System.Text.Json.JsonSerializer.Serialize(obj, new System.Text.Json.JsonSerializerOptions { IncludeFields = true, WriteIndented = true });

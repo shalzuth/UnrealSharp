@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Drawing;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace UnrealSharp
 {
@@ -224,6 +226,73 @@ namespace UnrealSharp
             var fullScreen = new Vector2(ScreenCenterX + vTransformed.X * (ScreenCenterX / (float)Math.Tan(fieldOfView * (float)Math.PI / 360)) / vTransformed.Z,
                 ScreenCenterY - vTransformed.Y * (ScreenCenterX / (float)Math.Tan(fieldOfView * (float)Math.PI / 360)) / vTransformed.Z);
             return new Vector2(fullScreen.X, fullScreen.Y);
+        }
+        [DllImport("user32")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, int dwExtraInfo);
+        public static void AimAtPos(Vector2 location, Single smoothSpeed = 8)
+        {
+            Single ScreenCenterX = 2560 / 2;
+            Single ScreenCenterY = 1440 / 2;
+            if (Math.Abs(location.X - ScreenCenterX) > ScreenCenterX / 4) return;
+            if (Math.Abs(location.Y - ScreenCenterY) > ScreenCenterY / 4) return;
+            Single TargetX = 0;
+            Single TargetY = 0;
+            if (location.X > ScreenCenterX)
+            {
+                TargetX = -(ScreenCenterX - location.X);
+            }
+            else if (location.X < ScreenCenterX)
+            {
+                TargetX = location.X - ScreenCenterX;
+            }
+            if (location.Y > ScreenCenterY)
+            {
+                TargetY = -(ScreenCenterY - location.Y);
+            }
+            else if (location.Y < ScreenCenterY)
+            {
+                TargetY = location.Y - ScreenCenterY;
+            }
+            TargetX /= smoothSpeed;
+            TargetY /= smoothSpeed;
+            var maxSmooth = 15;
+            if (TargetX > maxSmooth) TargetX = maxSmooth;
+            if (TargetY > maxSmooth) TargetY = maxSmooth;
+            if (TargetX < -maxSmooth) TargetX = -maxSmooth;
+            if (TargetY < -maxSmooth) TargetY = -maxSmooth;
+            mouse_event(0x0001, (int)Math.Round(TargetX), (int)Math.Round(TargetY), 0, 0);
+        }
+        [DllImport("user32.dll")] static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT[] pInputs, int cbSize);
+        struct INPUT
+        {
+            public UInt32 Type;
+            public MOUSEKEYBDHARDWAREINPUT Data;
+        }
+        [StructLayout(LayoutKind.Explicit)] struct MOUSEKEYBDHARDWAREINPUT
+        {
+            [FieldOffset(0)] public MOUSEINPUT Mouse;
+        }
+        struct MOUSEINPUT
+        {
+            public Int32 X;
+            public Int32 Y;
+            public UInt32 MouseData;
+            public UInt32 Flags;
+            public UInt32 Time;
+            public IntPtr ExtraInfo;
+        }
+        public static async Task MouseLeftClick()
+        {
+            //var inputs = new INPUT[] { new INPUT { Type = 0, Data = new MOUSEKEYBDHARDWAREINPUT { Mouse = new MOUSEINPUT { Flags = 2 } } }, new INPUT { Type = 0, Data = new MOUSEKEYBDHARDWAREINPUT { Mouse = new MOUSEINPUT { Flags = 4 } } } };
+            //SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            {
+                var inputs = new INPUT[] { new INPUT { Type = 0, Data = new MOUSEKEYBDHARDWAREINPUT { Mouse = new MOUSEINPUT { Flags = 2 } } } };
+                SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            }
+            {
+                await Task.Delay(15);
+                var inputs = new INPUT[] { new INPUT { Type = 0, Data = new MOUSEKEYBDHARDWAREINPUT { Mouse = new MOUSEINPUT { Flags = 4 } } } };
+                SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            }
         }
     }
 }
