@@ -37,7 +37,7 @@ namespace UnrealSharp
                 var stringAddr = Memory.FindStringRef("    SeamlessTravel FlushLevelStreaming");
                 GWorldPtrPattern = Memory.FindPattern("48 89 05", stringAddr - 0x500, 0x500);
                 //GWorldPtrPattern = Memory.FindPattern("48 89 05 ? ? ? ? 48 8B 76 78 F6 86");
-                GObjectsPattern = Memory.FindPattern("48 8B 05 ? ? ? ? 48 8B 0C C8 48 8D 04 D1 EB 06");
+                GObjectsPattern = Memory.FindPattern("48 8B 05 ? ? ? ? 48 8B 0C C8 ? 8D 04 D1 EB ?");
 
                 var offset = UnrealEngine.Memory.ReadProcessMemory<int>(GWorldPtrPattern + 3);
                 GWorldPtr = GWorldPtrPattern + offset + 7;
