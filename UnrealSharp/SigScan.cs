@@ -68,26 +68,6 @@ namespace UnrealSharp
     public class SigScan
     {
         /// <summary>
-        /// ReadProcessMemory
-        /// 
-        ///     API import definition for ReadProcessMemory.
-        /// </summary>
-        /// <param name="hProcess">Handle to the process we want to read from.</param>
-        /// <param name="lpBaseAddress">The base address to start reading from.</param>
-        /// <param name="lpBuffer">The return buffer to write the read data to.</param>
-        /// <param name="dwSize">The size of data we wish to read.</param>
-        /// <param name="lpNumberOfBytesRead">The number of bytes successfully read.</param>
-        /// <returns></returns>
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool ReadProcessMemory(
-            IntPtr hProcess,
-            IntPtr lpBaseAddress,
-            [Out()] byte[] lpBuffer,
-            int dwSize,
-            out int lpNumberOfBytesRead
-            );
-
-        /// <summary>
         /// m_vDumpedRegion
         /// 
         ///     The memory dumped from the external process.
@@ -170,20 +150,8 @@ namespace UnrealSharp
                 if (this.m_vSize == 0)
                     return false;
 
-                // Create the region space to dump into.
-                this.m_vDumpedRegion = new byte[this.m_vSize];
-
-                bool bReturn = false;
-                int nBytesRead = 0;
-
-                // Dump the memory.
-                bReturn = ReadProcessMemory(
-                    this.m_vProcess.Handle, this.m_vAddress, this.m_vDumpedRegion, this.m_vSize, out nBytesRead
-                    );
-
-                // Validation checks.
-                if (bReturn == false || nBytesRead != this.m_vSize)
-                    return false;
+                this.m_vDumpedRegion = UnrealEngine.Memory.ReadProcessMemory(this.m_vAddress, this.m_vSize);
+                
                 return true;
             }
             catch (Exception)

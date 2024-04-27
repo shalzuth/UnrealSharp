@@ -34,13 +34,20 @@ namespace UnrealSharp
                 //DumpGNames();
             }
             {
+                int offset;
                 var stringAddr = Memory.FindStringRef("    SeamlessTravel FlushLevelStreaming");
                 GWorldPtrPattern = Memory.FindPattern("48 89 05", stringAddr - 0x500, 0x500);
-                //GWorldPtrPattern = Memory.FindPattern("48 89 05 ? ? ? ? 48 8B 76 78 F6 86");
+                //GWorldPtrPattern = Memory.FindPattern("48 89 5C 24 08 57 48 83 EC 30 0F B6 DA 48 8B F9 80 FA 01 ?? ?? ?? ?? ?? ?? ?? ?? ?? BA");
+                if(GWorldPtrPattern != 0){
+                    offset = UnrealEngine.Memory.ReadProcessMemory<int>(GWorldPtrPattern + 3);
+                    GWorldPtr = GWorldPtrPattern + offset + 7;
+                } else {
+                    GWorldPtrPattern = Memory.FindPattern("0F 2E ?? 74 ?? 48 8B 1D ?? ?? ?? ?? 48 85 DB 74");
+                    offset = Memory.ReadProcessMemory<int>(GWorldPtrPattern + 8);
+                    GWorldPtr = GWorldPtrPattern + offset + 12;
+                }
                 GObjectsPattern = Memory.FindPattern("48 8B 05 ? ? ? ? 48 8B 0C C8 ? 8D 04 D1 EB ?");
 
-                var offset = UnrealEngine.Memory.ReadProcessMemory<int>(GWorldPtrPattern + 3);
-                GWorldPtr = GWorldPtrPattern + offset + 7;
                 UpdateUEObject();
 
                 offset = Memory.ReadProcessMemory<int>(GObjectsPattern + 3);
