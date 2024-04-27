@@ -71,16 +71,17 @@ namespace UnrealSharp
         {
             return ReadProcMemInternal(hProcess, lpBaseAddress, buffer, size, out lpNumberOfBytesRead);
         }*/
+
+        private const int MaxReadSize = 0x64000;
         public Byte[] ReadProcessMemory(nint addr, Int32 length)
         {
-            var maxSize = 0x64000;
             var buffer = new Byte[length];
-            for (var i = 0; i < length / (Single)maxSize; i++)
+            for (var i = 0; i < length / (Single)MaxReadSize; i++)
             {
-                var buf = new Byte[0x64000];
-                var blockSize = (i == (length / maxSize)) ? length : i % maxSize;
-                ReadProcessMemory2(procHandle, addr + i * maxSize, buf, blockSize, out Int32 bytesRead);
-                Array.Copy(buf, 0, buffer, i * maxSize, blockSize);
+                var blockSize = (i == (length / MaxReadSize)) ? length % MaxReadSize : MaxReadSize;
+                var buf = new Byte[blockSize];
+                ReadProcessMemory2(procHandle, addr + i * MaxReadSize, buf, blockSize, out Int32 bytesRead);
+                Array.Copy(buf, 0, buffer, i * MaxReadSize, blockSize);
             }
             return buffer;
         }
